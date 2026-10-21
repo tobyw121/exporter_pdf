@@ -27,7 +27,8 @@ except ImportError:
 
 POINTS_PER_MM = 72 / 25.4
 MODES = {
-    'Kanten fortsetzen (empfohlen)': 'stretch',
+    'CorelDRAW-kompatibel (wie Referenz)': 'corel',
+    'Kanten fortsetzen (Rasterrand)': 'stretch',
     'Rand spiegeln': 'mirror',
     'Weissen Rand einfuegen': 'white',
 }
@@ -98,9 +99,18 @@ def _paste_bleed(page_out, original_page, inner, bleed, mode, dpi):
         page_out.insert_image(rect, stream=mem.getvalue(), overlay=True)
 
 
-def make_print_pdf(source, destination, bleed_mm=3.0, mode='stretch', dpi=300, progress=None):
-    if fitz is None or Image is None:
-        raise RuntimeError('Fehlende Pakete. Bitte ausfuehren: python -m pip install PyMuPDF Pillow')
+def sample_corner_color(page):
+    """Read the upper-left printed background color from the source PDF."""
+    # The successful reference uses an unbroken color behind the copied PDF.
+    # Render only a tiny corner for a simple, consistent sRGB sample.
+    corner = fitz.Rect(0, 0, min(3, page.rect.width), min(3, page.rect.height))
+    pix = page.get_pixmap(matrix=fitz.Matrix(1, 1), clip=corner, colorspace=fitz.csRGB, alpha=False)
+    return tuple(pix.samples[i] / 255.0 for i in range(3))
+
+
+def make_print_pdf(source, destination, bleed_mm=3.0, mode='corel', dpi=300, progress=None):
+    if fitz is None or (mode != 'corel' and Image is None):
+        raise RuntimeError('Fehlende Pakete. Bitte PyMuPDF und fuer Rasterränder Pillow installieren.')
     bleed_mm = float(bleed_mm)
     dpi = int(dpi)
     if not 0.1 <= bleed_mm <= 20:
@@ -129,8 +139,13 @@ def make_print_pdf(source, destination, bleed_mm=3.0, mode='stretch', dpi=300, p
             # show_pdf_page copies the original PDF graphics as vectors.
             page = output.new_page(width=rect.width + 2*bleed, height=rect.height + 2*bleed)
             trim = fitz.Rect(bleed, bleed, bleed+rect.width, bleed+rect.height)
-            page.draw_rect(page.rect, color=None, fill=(1,1,1), overlay=False)
-            _paste_bleed(page, source_page, trim, bleed, mode, dpi)
+            if mode == 'corel':
+                # Recreate the successful Eintrittskarte_Druck_3mm_Beschnitt.pdf
+                # structure: solid full-sheet background + native vector PDF form.
+                page.draw_rect(page.rect, color=None, fill=sample_corner_color(source_page))
+            else:
+                page.draw_rect(page.rect, color=None, fill=(1, 1, 1), overlay=False)
+                _paste_bleed(page, source_page, trim, bleed, mode, dpi)
             page.show_pdf_page(trim, document, i, overlay=True, keep_proportion=False)
             page.set_trimbox(trim)
             page.set_bleedbox(page.mediabox)
@@ -155,9 +170,9 @@ def make_print_pdf(source, destination, bleed_mm=3.0, mode='stretch', dpi=300, p
 class BleedApp(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title('PDF Druckexport - 3 mm Beschnitt')
-        self.geometry('740x440')
-        self.minsize(650, 415)
+        self.title('PDF CorelDRAW Export - 3 mm Beschnitt')
+        self.geometry('830x450')
+        self.minsize(780, 430)
         self.configure(bg='#f5f7fa')
         self.source = tk.StringVar()
         self.destination = tk.StringVar()
@@ -182,23 +197,23 @@ class BleedApp(tk.Tk):
     def _build(self):
         root = ttk.Frame(self, padding=24)
         root.pack(fill='both', expand=True)
-        ttk.Label(root, text='Druck-PDF mit Beschnitt erstellen', style='Head.TLabel').pack(anchor='w')
-        ttk.Label(root, text='Originalgrafik bleibt vektorbasiert; TrimBox und BleedBox werden gesetzt.', style='Sub.TLabel').pack(anchor='w', pady=(4, 20))
+        ttk.Label(root, text='PDF fuer CorelDRAW konvertieren', style='Head.TLabel').pack(anchor='w')
+        ttk.Label(root, text='Referenz-Methode: neuer PDF-Container, Originalvektoren und 3 mm Beschnitt.', style='Sub.TLabel').pack(anchor='w', pady=(4, 20))
         self._file_line(root, 'Quelldatei (PDF)', self.source, self.pick_source)
         self._file_line(root, 'Ausgabedatei (PDF)', self.destination, self.pick_destination)
         settings = ttk.Frame(root)
         settings.pack(fill='x', pady=(14, 3))
         ttk.Label(settings, text='Beschnitt (mm)').grid(row=0, column=0, sticky='w', padx=(0, 16))
-        ttk.Label(settings, text='Randfuellung').grid(row=0, column=1, sticky='w', padx=(0, 16))
+        ttk.Label(settings, text='Exportmodus').grid(row=0, column=1, sticky='w', padx=(0, 16))
         ttk.Label(settings, text='Rand-DPI').grid(row=0, column=2, sticky='w')
         ttk.Entry(settings, textvariable=self.bleed, width=12).grid(row=1, column=0, sticky='w', padx=(0, 16), pady=5)
-        ttk.Combobox(settings, textvariable=self.mode, values=list(MODES), state='readonly', width=31).grid(row=1, column=1, sticky='w', padx=(0, 16), pady=5)
+        ttk.Combobox(settings, textvariable=self.mode, values=list(MODES), state='readonly', width=39).grid(row=1, column=1, sticky='w', padx=(0, 16), pady=5)
         ttk.Combobox(settings, textvariable=self.dpi, values=['150','200','300','450','600'], state='readonly', width=9).grid(row=1, column=2, sticky='w', pady=5)
-        ttk.Label(root, text='Hinweis: Randfortsetzung funktioniert am besten bei einfarbigen Hintergruenden.\nFotos oder Muster am Rand muessen vor der Druckfreigabe kontrolliert werden.', style='Sub.TLabel').pack(anchor='w', pady=(9, 12))
+        ttk.Label(root, text='CorelDRAW-Modus: nutzt die Eckfarbe als Beschnitthintergrund.\nBei mehrfarbigem Rand die erzeugte Datei vor dem Druck kontrollieren.', style='Sub.TLabel').pack(anchor='w', pady=(9, 12))
         self.bar = ttk.Progressbar(root, maximum=100, mode='determinate')
         self.bar.pack(fill='x', pady=(5, 7))
         ttk.Label(root, textvariable=self.status, style='Sub.TLabel').pack(anchor='w')
-        self.export_button = ttk.Button(root, text='Druck-PDF exportieren', style='Action.TButton', command=self.export)
+        self.export_button = ttk.Button(root, text='Fuer CorelDRAW exportieren', style='Action.TButton', command=self.export)
         self.export_button.pack(anchor='e', pady=(13, 0))
 
     def _file_line(self, parent, heading, variable, callback):
@@ -259,11 +274,11 @@ class BleedApp(tk.Tk):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='GUI: PDF mit 3 mm Beschnitt erzeugen')
+    parser = argparse.ArgumentParser(description='GUI: PDF wie die erfolgreiche CorelDRAW-Referenz mit 3 mm Beschnitt konvertieren')
     parser.add_argument('--input', help='Quelldatei fuer Kommandozeilenmodus')
     parser.add_argument('--output', help='Zieldatei fuer Kommandozeilenmodus')
     parser.add_argument('--bleed', type=float, default=3.0, help='Beschnitt in Millimetern (Standard: 3)')
-    parser.add_argument('--mode', choices=['stretch', 'mirror', 'white'], default='stretch')
+    parser.add_argument('--mode', choices=['corel', 'stretch', 'mirror', 'white'], default='corel')
     parser.add_argument('--dpi', type=int, default=300)
     args = parser.parse_args()
     if args.input or args.output:

@@ -19,7 +19,7 @@ with tempfile.TemporaryDirectory() as tmp:
     page.insert_text((30, 50), 'Test PDF 3mm')
     doc.save(src)
     doc.close()
-    subprocess.run([str(exe), '--input', str(src), '--output', str(dst), '--bleed', '3'], check=True, timeout=120)
+    subprocess.run([str(exe), '--input', str(src), '--output', str(dst), '--bleed', '3', '--mode', 'corel'], check=True, timeout=120)
     with fitz.open(dst) as out:
         assert out.page_count == 1
         p = out[0]
@@ -28,4 +28,6 @@ with tempfile.TemporaryDirectory() as tmp:
         assert abs(p.rect.height - (500 + 2*b)) < 0.1
         assert abs(p.trimbox.width - 300) < 0.1
         assert abs(p.trimbox.height - 500) < 0.1
+        assert len(p.get_images()) == 0, 'Corel-Modus soll keine Beschnitt-Rasterbilder erzeugen'
+        assert len(p.get_text().strip()) > 0, 'Originaltext als PDF-Inhalt nicht erhalten'
     print('Smoke test OK')

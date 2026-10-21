@@ -1,3 +1,9 @@
+# CorelDRAW PDF-Konverter (3 mm Beschnitt)
+
+Der Standardmodus `corel` bildet die Struktur der zuvor erfolgreichen `Eintrittskarte_Druck_3mm_Beschnitt.pdf` nach: neue PDF-Seite, durchgehende Hintergrundfarbe (aus der oberen linken Ecke ermittelt), unveraendert uebernommener Original-Vektorinhalt und 3 mm Beschnitt mit TrimBox/BleedBox.
+
+**Wichtig:** Bei mehrfarbigen Raendern ist der automatisch ergaenzte Beschnitthintergrund ggf. unpassend. Der Import in beliebige CorelDRAW-Versionen ist nicht garantiert. Bereits in Kurven verwandelte Schrift wird dadurch nicht editierbar.
+
 # PDF Beschnitt GUI
 
 Eigenstaendige Desktopanwendung zum Erstellen einer Druck-PDF mit standardmaessig **3 mm Beschnitt**. Der Originalinhalt der PDF bleibt als Vektorinhalt erhalten; nur automatisch erstellte Randstreifen koennen rasterisiert werden.
@@ -39,3 +45,10 @@ python PDF_Beschnitt_GUI.py --input quelle.pdf --output druck.pdf --bleed 3 --mo
 ## Grenzen
 
 Das Verfahren setzt PDF TrimBox und BleedBox. Automatisch fortgesetzte oder gespiegelte Kanten koennen an Mustern sichtbar sein; Druckdaten unbedingt kontrollieren. Es findet keine PDF/X-Konvertierung oder automatische CMYK-Farbkonvertierung statt. Die Build-Workflows pruefen einen nicht-interaktiven Testexport, nicht die grafische Fensterdarstellung.
+
+
+## Referenzgleicher CLI-Export
+
+```bash
+python PDF_Beschnitt_GUI.py --input original.pdf --output original_CorelDRAW_3mm.pdf --mode corel --bleed 3
+```
