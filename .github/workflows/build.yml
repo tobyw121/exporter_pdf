@@ -1,0 +1,101 @@
+name: Build Windows and Linux
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            artifact: PDF-Beschnitt-Linux-x64
+          - os: windows-2022
+            artifact: PDF-Beschnitt-Windows-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+          cache: pip
+
+      - name: Linux GUI libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y python3-tk libgl1 libglib2.0-0
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements-build.txt
+
+      - name: Build application
+        shell: bash
+        run: |
+          python -m PyInstaller --noconfirm --clean --windowed --onedir --name PDF-Beschnitt-GUI PDF_Beschnitt_GUI.py
+
+      - name: Smoke test packaged program
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            python tests/smoke_test.py --executable dist/PDF-Beschnitt-GUI/PDF-Beschnitt-GUI.exe
+          else
+            python tests/smoke_test.py --executable dist/PDF-Beschnitt-GUI/PDF-Beschnitt-GUI
+          fi
+
+      - name: Bundle with README (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          mkdir -p release/PDF-Beschnitt-Linux-x64
+          cp -a dist/PDF-Beschnitt-GUI/. release/PDF-Beschnitt-Linux-x64/
+          cp README.md release/PDF-Beschnitt-Linux-x64/
+          tar -czf release/PDF-Beschnitt-Linux-x64.tar.gz -C release PDF-Beschnitt-Linux-x64
+
+      - name: Bundle with README (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release/PDF-Beschnitt-Windows-x64 | Out-Null
+          Copy-Item dist/PDF-Beschnitt-GUI/* release/PDF-Beschnitt-Windows-x64/ -Recurse
+          Copy-Item README.md release/PDF-Beschnitt-Windows-x64/
+          Compress-Archive -Path release/PDF-Beschnitt-Windows-x64 -DestinationPath release/PDF-Beschnitt-Windows-x64.zip -Force
+
+      - name: Upload executable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            release/*.zip
+            release/*.tar.gz
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download built packages
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release-artifacts/*.zip release-artifacts/*.tar.gz --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
